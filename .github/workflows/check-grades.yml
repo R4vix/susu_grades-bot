@@ -1,0 +1,50 @@
+name: Проверка оценок
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # каждые 30 минут (время UTC; GitHub может опоздать на несколько минут)
+  workflow_dispatch:          # кнопка «Run workflow» для ручной проверки
+
+permissions:
+  contents: write             # чтобы сохранять state.json обратно в репозиторий
+
+concurrency:
+  group: check-grades
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Проверить оценки
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          UNI_LOGIN: ${{ secrets.UNI_LOGIN }}
+          UNI_PASSWORD: ${{ secrets.UNI_PASSWORD }}
+          DEMO: ${{ vars.DEMO }}
+        run: python check.py
+
+      - name: Сохранить оценки
+        run: |
+          for f in state.json state_demo.json; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
+          if git diff --cached --quiet; then
+            echo "Изменений нет."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Обновить сохранённые оценки"
+          git push
